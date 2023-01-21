@@ -20,7 +20,7 @@ use Zenstruck\Browser\Assertion\SameUrlAssertion;
 use Zenstruck\Browser\Component;
 use Zenstruck\Browser\Session;
 use Zenstruck\Browser\Session\Driver;
-use Zenstruck\Callback\Parameter;
+use Zenstruck\Mirror\Argument;
 
 /**
  * @author Kevin Bond <kevinbond@gmail.com>
@@ -387,8 +387,8 @@ abstract class Browser
      */
     final public function use(callable $callback): self
     {
-        Callback::createFor($callback)->invokeAll(
-            Parameter::union(...$this->useParameters())
+        MirrorCallable::for($callback)->invoke(
+            Argument::union(...$this->useArguments())
         );
 
         return $this;
@@ -481,17 +481,17 @@ abstract class Browser
     /**
      * @internal
      *
-     * @return Parameter[]
+     * @return Argument[]
      */
-    protected function useParameters(): array
+    protected function useArguments(): array
     {
         return [
-            Parameter::untyped($this),
-            Parameter::typed(self::class, $this),
-            Parameter::typed(Component::class, Parameter::factory(fn(string $class) => new $class($this))),
-            Parameter::typed(Crawler::class, Parameter::factory(fn() => $this->client()->getCrawler())),
-            Parameter::typed(CookieJar::class, Parameter::factory(fn() => $this->client()->getCookieJar())),
-            Parameter::typed(AbstractBrowser::class, Parameter::factory(fn() => $this->client())),
+            Argument::untyped($this),
+            Argument::typed(self::class, $this, MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
+            Argument::typedFactory(Component::class, fn(string $class) => new $class($this), MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
+            Argument::typedFactory(Crawler::class, fn() => $this->client()->getCrawler(), MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
+            Argument::typedFactory(CookieJar::class, fn() => $this->client()->getCookieJar(), MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
+            Argument::typedFactory(AbstractBrowser::class, fn() => $this->client(), MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
         ];
     }
 }

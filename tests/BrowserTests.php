@@ -23,7 +23,7 @@ use Zenstruck\Browser;
 use Zenstruck\Browser\Test\HasBrowser;
 use Zenstruck\Browser\Tests\Fixture\TestComponent1;
 use Zenstruck\Browser\Tests\Fixture\TestComponent2;
-use Zenstruck\Callback\Exception\UnresolveableArgument;
+use Zenstruck\Mirror\Exception\UnresolveableArgument;
 
 /**
  * @author Kevin Bond <kevinbond@gmail.com>

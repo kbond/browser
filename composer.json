@@ -20,7 +20,7 @@
         "symfony/framework-bundle": "^5.4|^6.0",
         "symfony/polyfill-php80": "^1.20",
         "zenstruck/assert": "^1.1",
-        "zenstruck/callback": "^1.4.2"
+        "zenstruck/mirror": "@dev"
     },
     "require-dev": {
         "dbrekelmans/bdi": "^1.0",
@@ -34,6 +34,12 @@
         "symfony/security-bundle": "^5.4|^6.0",
         "zenstruck/foundry": "^1.23"
     },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../mirror"
+        }
+    ],
     "suggest": {
         "justinrainbow/json-schema": "Json schema validator. Needed to use Json::assertMatchesSchema().",
         "mtdowling/jmespath.php":  "PHP implementation for JMESPath. Needed to use Json assertions."

@@ -19,9 +19,10 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Zenstruck\Assert;
 use Zenstruck\Browser;
 use Zenstruck\Browser\Session\Driver\BrowserKitDriver;
-use Zenstruck\Callback\Parameter;
 use Zenstruck\Foundry\Factory;
 use Zenstruck\Foundry\Proxy;
+use Zenstruck\Mirror\Argument;
+use Zenstruck\MirrorType;
 
 /**
  * @author Kevin Bond <kevinbond@gmail.com>
@@ -484,12 +485,12 @@ class KernelBrowser extends Browser
         return $this->assertJson()->session()->json();
     }
 
-    protected function useParameters(): array
+    protected function useArguments(): array
     {
         return [
-            ...parent::useParameters(),
-            Parameter::typed(Json::class, Parameter::factory(fn() => $this->json())),
-            Parameter::typed(DataCollectorInterface::class, Parameter::factory(function(string $class) {
+            ...parent::useArguments(),
+            Argument::typedFactory(Json::class, fn() => $this->json(), MirrorType::DEFAULT | MirrorType::STRICT),
+            Argument::typedFactory(DataCollectorInterface::class, function(string $class) {
                 foreach ($this->profile()->getCollectors() as $collector) {
                     if ($class === \get_class($collector)) {
                         return $collector;
@@ -497,7 +498,7 @@ class KernelBrowser extends Browser
                 }
 
                 Assert::fail('DataCollector %s is not available for this request.', [$class]);
-            })),
+            }, MirrorType::DEFAULT | MirrorType::CONTRAVARIANCE),
         ];
     }
 
