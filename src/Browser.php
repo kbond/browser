@@ -90,7 +90,7 @@ abstract class Browser
      */
     final public function assertContains(string $expected): self
     {
-        $this->session()->assert()->responseContains($expected);
+        Assert::that($this->content())->contains($expected);
 
         return $this;
     }
@@ -100,7 +100,7 @@ abstract class Browser
      */
     final public function assertNotContains(string $expected): self
     {
-        $this->session()->assert()->responseNotContains($expected);
+        Assert::that($this->content())->doesNotContain($expected);
 
         return $this;
     }
@@ -120,7 +120,7 @@ abstract class Browser
      */
     final public function assertSee(string $expected): self
     {
-        $this->session()->assert()->pageTextContains($expected);
+        $this->session()->domAssert()->contains($expected);
 
         return $this;
     }
@@ -130,7 +130,7 @@ abstract class Browser
      */
     final public function assertNotSee(string $expected): self
     {
-        $this->session()->assert()->pageTextNotContains($expected);
+        $this->session()->domAssert()->doesNotContain($expected);
 
         return $this;
     }
@@ -140,7 +140,7 @@ abstract class Browser
      */
     final public function assertSeeIn(string $selector, string $expected): self
     {
-        $this->session()->assert()->elementTextContains('css', $selector, $expected);
+        $this->session()->domAssert()->containsIn($selector, $expected);
 
         return $this;
     }
@@ -150,7 +150,7 @@ abstract class Browser
      */
     final public function assertNotSeeIn(string $selector, string $expected): self
     {
-        $this->session()->assert()->elementTextNotContains('css', $selector, $expected);
+        $this->session()->domAssert()->doesNotContainIn($selector, $expected);
 
         return $this;
     }
@@ -160,7 +160,7 @@ abstract class Browser
      */
     final public function assertSeeElement(string $selector): self
     {
-        $this->session()->assert()->elementExists('css', $selector);
+        $this->session()->domAssert()->hasElement($selector);
 
         return $this;
     }
@@ -170,7 +170,7 @@ abstract class Browser
      */
     final public function assertNotSeeElement(string $selector): self
     {
-        $this->session()->assert()->elementNotExists('css', $selector);
+        $this->session()->domAssert()->doesNotHaveElement($selector);
 
         return $this;
     }
@@ -180,7 +180,7 @@ abstract class Browser
      */
     final public function assertElementCount(string $selector, int $count): self
     {
-        $this->session()->assert()->elementsCount('css', $selector, $count);
+        $this->session()->domAssert()->hasElementCount($selector, $count);
 
         return $this;
     }
@@ -190,7 +190,7 @@ abstract class Browser
      */
     final public function assertElementAttributeContains(string $selector, string $attribute, string $expected): self
     {
-        $this->session()->assert()->elementAttributeContains('css', $selector, $attribute, $expected);
+        $this->session()->domAssert()->attributeContains($selector, $attribute, $expected);
 
         return $this;
     }
@@ -200,7 +200,7 @@ abstract class Browser
      */
     final public function assertElementAttributeNotContains(string $selector, string $attribute, string $expected): self
     {
-        $this->session()->assert()->elementAttributeNotContains('css', $selector, $attribute, $expected);
+        $this->session()->domAssert()->attributeDoesNotContain($selector, $attribute, $expected);
 
         return $this;
     }
@@ -325,7 +325,7 @@ abstract class Browser
      */
     final public function assertFieldEquals(string $selector, string $expected): self
     {
-        $this->session()->assert()->fieldValueEquals($selector, $expected);
+        $this->session()->domAssert()->fieldEquals($selector, $expected);
 
         return $this;
     }
@@ -335,7 +335,7 @@ abstract class Browser
      */
     final public function assertFieldNotEquals(string $selector, string $expected): self
     {
-        $this->session()->assert()->fieldValueNotEquals($selector, $expected);
+        $this->session()->domAssert()->fieldDoesNotEqual($selector, $expected);
 
         return $this;
     }
@@ -345,9 +345,7 @@ abstract class Browser
      */
     final public function assertSelected(string $selector, string $expected): self
     {
-        $field = $this->session()->assert()->fieldExists($selector);
-
-        Assert::that((array) $field->getValue())->contains($expected);
+        $this->session()->domAssert()->fieldSelected($selector, $expected);
 
         return $this;
     }
@@ -357,9 +355,7 @@ abstract class Browser
      */
     final public function assertNotSelected(string $selector, string $expected): self
     {
-        $field = $this->session()->assert()->fieldExists($selector);
-
-        Assert::that((array) $field->getValue())->doesNotContain($expected);
+        $this->session()->domAssert()->fieldNotSelected($selector, $expected);
 
         return $this;
     }
@@ -369,7 +365,7 @@ abstract class Browser
      */
     final public function assertChecked(string $selector): self
     {
-        $this->session()->assert()->checkboxChecked($selector);
+        $this->session()->domAssert()->fieldChecked($selector);
 
         return $this;
     }
@@ -379,7 +375,7 @@ abstract class Browser
      */
     final public function assertNotChecked(string $selector): self
     {
-        $this->session()->assert()->checkboxNotChecked($selector);
+        $this->session()->domAssert()->fieldNotChecked($selector);
 
         return $this;
     }

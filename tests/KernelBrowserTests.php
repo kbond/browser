@@ -306,10 +306,10 @@ trait KernelBrowserTests
         $this->browser()
             ->setDefaultHttpOptions(['headers' => ['x-foo' => 'bar']])
             ->post('/http-method')
-            ->assertContains('"x-foo":["Bar"]')
+            ->assertContains('"x-foo":["bar"]')
             ->post('/http-method', ['headers' => ['x-bar' => 'foo']])
-            ->assertContains('"x-bar":["Foo"]')
-            ->assertContains('"x-foo":["Bar"]')
+            ->assertContains('"x-bar":["foo"]')
+            ->assertContains('"x-foo":["bar"]')
         ;
     }
 

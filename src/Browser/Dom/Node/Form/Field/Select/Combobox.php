@@ -3,7 +3,6 @@
 namespace Zenstruck\Browser\Dom\Node\Form\Field\Select;
 
 use Zenstruck\Browser\Dom\Node\Form\Field\Select;
-use Zenstruck\Browser\Dom\Node\Form\Field\Select\Option;
 
 /**
  * @author Kevin Bond <kevinbond@gmail.com>

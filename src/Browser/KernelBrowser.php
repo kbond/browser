@@ -427,7 +427,9 @@ class KernelBrowser extends Browser
      */
     final public function assertHeaderEquals(string $header, ?string $expected): self
     {
-        $this->session()->assert()->responseHeaderEquals($header, $expected);
+        Assert::that($this->client()->getResponse()->headers->get($header))
+            ->equals($expected, 'Header "{header}" is "{actual}", but "{expected}" expected.', ['header' => $header])
+        ;
 
         return $this;
     }
@@ -437,7 +439,10 @@ class KernelBrowser extends Browser
      */
     final public function assertHeaderContains(string $header, string $expected): self
     {
-        $this->session()->assert()->responseHeaderContains($header, $expected);
+        Assert::that($this->client()->getResponse()->headers->get($header))
+            ->isNotNull('Header "{header}" is not present in the response.', ['header' => $header])
+            ->contains($expected, 'Header "{header}" is "{actual}", but "{expected}" expected.', ['header' => $header])
+        ;
 
         return $this;
     }

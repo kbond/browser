@@ -115,10 +115,10 @@ final class Selector implements \Stringable
         } catch (SyntaxErrorException) {}
 
         try {
-            if (!\count($label = $crawler->filter(\sprintf('label:contains("%s")', $value)))) {
+            if (!\count($label = $crawler->filterXPath(\sprintf('//label[.="%s"]', $value)))) {
                 return new Crawler();
             }
-        } catch (SyntaxErrorException) {}
+        } catch (\Throwable) {}
 
         if (isset($label) && $id = $label->attr('for')) {
             return self::filterByType($crawler, self::ID, $id);

@@ -203,6 +203,11 @@ class Node
         return $this;
     }
 
+    public function isVisible(): bool
+    {
+        return true; // todo panther support
+    }
+
     public function dd(): void
     {
         $this->dump();

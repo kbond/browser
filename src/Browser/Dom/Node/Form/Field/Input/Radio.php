@@ -13,4 +13,14 @@ final class Radio extends Input
     {
         return $this->attributes()->has('checked');
     }
+
+    public function selected(): ?Radio
+    {
+        return $this->collection()->first('[checked]')?->ensure(self::class);
+    }
+
+    public function selectedValue(): ?string
+    {
+        return $this->selected()?->value();
+    }
 }

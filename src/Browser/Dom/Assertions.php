@@ -43,6 +43,26 @@ trait Assertions
         return $this;
     }
 
+    public function elementIsVisible(string $selector): static
+    {
+        Assert::true($this->node($selector)->isVisible(), 'Element with selector "{selector}" is not visible.', ['selector' => $selector]);
+
+        return $this;
+    }
+
+    public function elementIsNotVisible(string $selector): static
+    {
+        if (!$node = $this->dom()->find($selector)) {
+            Assert::pass();
+
+            return $this;
+        }
+
+        Assert::false($node->isVisible(), 'Element with selector "{selector}" is visible but it should not be.', ['selector' => $selector]);
+
+        return $this;
+    }
+
     public function hasElement(string $selector): static
     {
         Assert::that($this->dom()->find($selector))->isNotNull('Element with selector "{selector}" does not exist.', ['selector' => $selector]);
@@ -107,10 +127,8 @@ trait Assertions
 
         switch ($node::class) {
             case Radio::class:
-                Assert::that($node->value())
+                Assert::that($node->selectedValue())
                     ->equals($expected, 'Radio with selector "{selector}" does not equal "{expected}".', ['selector' => $selector])
-                    ->and($node->isSelected())
-                    ->is(true, 'Radio with selector "{selector}" is not selected.', ['selector' => $selector])
                 ;
 
                 break;
@@ -198,7 +216,7 @@ trait Assertions
             ;
         } elseif ($node instanceof Radio) {
             Assert::that($node->isSelected())
-                ->is(true, 'Radio with selector "{selector}" is selected but it should not be.', ['selector' => $selector])
+                ->is(false, 'Radio with selector "{selector}" is selected but it should not be.', ['selector' => $selector])
             ;
         } else {
             Assert::fail('Field with selector "{selector}" is not a checkbox or radio.', ['selector' => $selector]);

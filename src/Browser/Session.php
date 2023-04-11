@@ -15,11 +15,10 @@ use Behat\Mink\Element\DocumentElement;
 use Behat\Mink\Exception\DriverException;
 use Behat\Mink\Exception\UnsupportedDriverActionException;
 use Behat\Mink\Session as MinkSession;
-use Behat\Mink\WebAssert;
 use Symfony\Component\BrowserKit\AbstractBrowser;
 use Symfony\Component\DomCrawler\Crawler;
 use Zenstruck\Assert as ZenstruckAssert;
-use Zenstruck\Browser\Session\Assert;
+use Zenstruck\Browser\Dom\Expectation;
 use Zenstruck\Browser\Session\Driver;
 
 /**
@@ -49,11 +48,11 @@ final class Session extends MinkSession
         return $this->getDriver()->client();
     }
 
-    public function assert(): Assert
+    public function domAssert(): Expectation
     {
         $this->ensureNoException();
 
-        return new Assert(new WebAssert($this));
+        return new Expectation($this->client()->getCrawler());
     }
 
     public function page(): DocumentElement

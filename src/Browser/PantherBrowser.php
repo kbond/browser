@@ -53,9 +53,7 @@ class PantherBrowser extends Browser
      */
     final public function assertVisible(string $selector): self
     {
-        $element = $this->session()->assert()->elementExists('css', $selector);
-
-        Assert::true($element->isVisible(), 'Expected element "%s" to be visible but it isn\'t.', [$selector]);
+        $this->session()->domAssert()->elementIsVisible($selector);
 
         return $this;
     }
@@ -65,15 +63,7 @@ class PantherBrowser extends Browser
      */
     final public function assertNotVisible(string $selector): self
     {
-        $element = $this->session()->page()->find('css', $selector);
-
-        if (!$element) {
-            Assert::pass();
-
-            return $this;
-        }
-
-        Assert::false($element->isVisible(), 'Expected element "%s" to not be visible but it is.', [$selector]);
+        $this->session()->domAssert()->elementIsNotVisible($selector);
 
         return $this;
     }
