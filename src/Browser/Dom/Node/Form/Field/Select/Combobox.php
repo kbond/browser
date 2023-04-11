@@ -11,7 +11,16 @@ final class Combobox extends Select
 {
     public function selectedOption(): ?Option
     {
-        return $this->availableOptions()->first('[selected]')?->ensure(Option::class);
+        foreach ($this->availableOptions() as $option) {
+            // hack for panther
+            $option = $option->ensure(Option::class);
+
+            if ($option->isSelected()) {
+                return $option;
+            }
+        }
+
+        return null;
     }
 
     public function selectedValue(): ?string

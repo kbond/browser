@@ -11,6 +11,7 @@
 
 namespace Zenstruck\Browser\Test;
 
+use Facebook\WebDriver\Chrome\ChromeOptions;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Panther\Client as PantherClient;
@@ -65,8 +66,18 @@ trait HasBrowser
         if (self::$primaryPantherClient) {
             $browser = new $class(static::createAdditionalPantherClient(), $browserOptions);
         } else {
+            $browserType = $_SERVER['PANTHER_BROWSER'] ?? PantherTestCase::CHROME;
+
+            if (!$managerOptions && PantherTestCase::CHROME === $browserType) {
+                $managerOptions = [
+                    'capabilities' => [
+                        ChromeOptions::CAPABILITY => (new ChromeOptions())->setExperimentalOption('w3c', false),
+                    ],
+                ];
+            }
+
             self::$primaryPantherClient = static::createPantherClient(
-                \array_merge(['browser' => $_SERVER['PANTHER_BROWSER'] ?? PantherTestCase::CHROME], $options),
+                \array_merge(['browser' => $browserType], $options),
                 $kernelOptions,
                 $managerOptions
             );

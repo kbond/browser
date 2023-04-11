@@ -11,7 +11,7 @@ final class Option extends Field
 {
     public function value(): ?string
     {
-        return $this->attributes()->get('value') ?? $this->text();
+        return $this->attributes()->get('value') ?? $this->text() ?: null;
     }
 
     public function isSelected(): bool

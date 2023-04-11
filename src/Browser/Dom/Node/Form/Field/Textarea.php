@@ -9,7 +9,7 @@ use Zenstruck\Browser\Dom\Node\Form\Field;
  */
 final class Textarea extends Field
 {
-    public function value(): ?string
+    public function value(): string
     {
         return $this->directText();
     }

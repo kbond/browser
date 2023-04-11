@@ -16,7 +16,16 @@ final class Radio extends Input
 
     public function selected(): ?Radio
     {
-        return $this->collection()->first('[checked]')?->ensure(self::class);
+        foreach ($this->collection() as $radio) {
+            // hack for panther
+            $radio = $radio->ensure(self::class);
+
+            if ($radio->isSelected()) {
+                return $radio;
+            }
+        }
+
+        return null;
     }
 
     public function selectedValue(): ?string

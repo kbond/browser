@@ -106,13 +106,13 @@ final class Selector implements \Stringable
             if (\count($filtered = self::filterByType($crawler, self::ID, $value))) {
                 return $filtered;
             }
-        } catch (SyntaxErrorException) {}
+        } catch (\Throwable) {}
 
         try {
             if (\count($filtered = $crawler->filter(\sprintf('[name="%s"]', $value)))) {
                 return $filtered;
             }
-        } catch (SyntaxErrorException) {}
+        } catch (\Throwable) {}
 
         try {
             if (!\count($label = $crawler->filterXPath(\sprintf('//label[.="%s"]', $value)))) {

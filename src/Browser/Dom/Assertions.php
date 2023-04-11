@@ -135,7 +135,7 @@ trait Assertions
 
             case Multiselect::class:
                 Assert::that($node->selectedValues())
-                    ->contains($expected, 'Multiselect with selector "{selector}" does not have "{expected}" selected.', ['selector' => $selector])
+                    ->contains($expected, 'Multiselect with selector "{selector}" does not have "{needle}" selected.', ['selector' => $selector])
                 ;
 
                 break;
@@ -168,7 +168,7 @@ trait Assertions
 
             case Multiselect::class:
                 Assert::that($node->selectedValues())
-                    ->doesNotContain($expected, 'Multiselect with selector "{selector}" has "{expected}" selected but it should not.', ['selector' => $selector])
+                    ->doesNotContain($expected, 'Multiselect with selector "{selector}" has "{needle}" selected but it should not.', ['selector' => $selector])
                 ;
 
                 break;

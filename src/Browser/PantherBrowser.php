@@ -48,6 +48,34 @@ class PantherBrowser extends Browser
         $this->consoleLogDir = $options['console_log_dir'] ?? null;
     }
 
+    public function assertSeeIn(string $selector, string $expected): self
+    {
+        if ('title' === $selector) {
+            // hack to get the text of the title html element
+            // for this element, WebDriverElement::getText() returns an empty string
+            // the only way to get the value is to get title from the client
+            Assert::that($this->client()->getTitle())->contains($expected);
+
+            return $this;
+        }
+
+        return parent::assertSeeIn($selector, $expected);
+    }
+
+    public function assertNotSeeIn(string $selector, string $expected): self
+    {
+        if ('title' === $selector) {
+            // hack to get the text of the title html element
+            // for this element, WebDriverElement::getText() returns an empty string
+            // the only way to get the value is to get title from the client
+            Assert::that($this->client()->getTitle())->doesNotContain($expected);
+
+            return $this;
+        }
+
+        return parent::assertNotSeeIn($selector, $expected);
+    }
+
     /**
      * @return static
      */

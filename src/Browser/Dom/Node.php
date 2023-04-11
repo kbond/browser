@@ -12,6 +12,7 @@
 namespace Zenstruck\Browser\Dom;
 
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\Panther\DomCrawler\Crawler as PantherCrawler;
 use Zenstruck\Browser\Dom\Exception\RuntimeException;
 use Zenstruck\Browser\Dom\Node\Attributes;
 use Zenstruck\Browser\Dom\Node\Form;
@@ -52,7 +53,7 @@ class Node
 
     public function element(): \DOMElement
     {
-        $element = $this->crawler->getNode(0);
+        $element = $this->normalizedCrawler()->getNode(0);
 
         if (!$element instanceof \DOMElement) {
             throw new RuntimeException('Unable to get attributes from non-element node.');
@@ -76,22 +77,14 @@ class Node
         return new Attributes($this->element());
     }
 
-    public function text(): ?string
+    public function text(): string
     {
-        if ('' === $text = $this->crawler->text()) {
-            return null;
-        }
-
-        return $text;
+        return $this->crawler->text();
     }
 
     public function directText(): ?string
     {
-        if ('' === $text = $this->crawler->innerText()) {
-            return null;
-        }
-
-        return $text;
+        return $this->crawler->innerText();
     }
 
     public function html(): ?string
@@ -157,6 +150,10 @@ class Node
 
     public function descendents(?string $selector = null): Nodes
     {
+        if ($this->crawler instanceof PantherCrawler) {
+            return self::applySelectorTo($this->crawler, $selector ?? '*');
+        }
+
         // todo can this be improved?
         $crawler = $this->crawler->filter('*')->reduce(static function(Crawler $node, int $i) {
             return 0 !== $i;
@@ -205,7 +202,11 @@ class Node
 
     public function isVisible(): bool
     {
-        return true; // todo panther support
+        if ($this->crawler instanceof PantherCrawler) {
+            return $this->crawler->isDisplayed();
+        }
+
+        return true;
     }
 
     public function dd(): void
@@ -220,5 +221,14 @@ class Node
         $nodes = Nodes::create($crawler);
 
         return $selector ? $nodes->filter($selector) : $nodes;
+    }
+
+    private function normalizedCrawler(): Crawler
+    {
+        if ($this->crawler instanceof PantherCrawler) {
+            return (new Crawler($this->crawler->html()))->filter($this->tag());
+        }
+
+        return $this->crawler;
     }
 }
