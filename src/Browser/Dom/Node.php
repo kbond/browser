@@ -29,19 +29,20 @@ class Node
     public static function create(Crawler $crawler): self
     {
         $node = new self($crawler);
+        $tag = \strtolower($node->tag());
 
         return match(true) {
-            $node->tagIs('form') => new Form($crawler),
-            $node->tagIs('label') => new Form\Label($crawler),
-            $node->tagIs('textarea') => new Form\Field\Textarea($crawler),
-            $node->tagIs('input') && $node->attributes()->is('type', 'checkbox') => new Form\Field\Input\Checkbox($crawler),
-            $node->tagIs('input') && $node->attributes()->is('type', 'radio') => new Form\Field\Input\Radio($crawler),
-            $node->tagIs('input') && $node->attributes()->is('type', 'input', 'button', 'reset') => new Form\Button($crawler),
-            $node->tagIs('button') => new Form\Button($crawler),
-            $node->tagIs('input') => new Form\Field\Input($crawler),
-            $node->tagIs('option') => new Form\Field\Select\Option($crawler),
-            $node->tagIs('select') && $node->attributes()->has('multiple') => new Form\Field\Select\Multiselect($crawler),
-            $node->tagIs('select') => new Form\Field\Select\Combobox($crawler),
+            $tag === 'form' => new Form($crawler),
+            $tag === 'label' => new Form\Label($crawler),
+            $tag === 'textarea' => new Form\Field\Textarea($crawler),
+            $tag === 'input' && $node->attributes()->is('type', 'checkbox') => new Form\Field\Input\Checkbox($crawler),
+            $tag === 'input' && $node->attributes()->is('type', 'radio') => new Form\Field\Input\Radio($crawler),
+            $tag === 'input' && $node->attributes()->is('type', 'input', 'button', 'reset') => new Form\Button($crawler),
+            $tag === 'button' => new Form\Button($crawler),
+            $tag === 'input' => new Form\Field\Input($crawler),
+            $tag === 'option' => new Form\Field\Select\Option($crawler),
+            $tag === 'select' && $node->attributes()->has('multiple') => new Form\Field\Select\Multiselect($crawler),
+            $tag === 'select' => new Form\Field\Select\Combobox($crawler),
             default => $node,
         };
     }
@@ -65,11 +66,6 @@ class Node
     public function tag(): string
     {
         return $this->crawler->nodeName();
-    }
-
-    public function tagIs(string $expected): bool
-    {
-        return \strtolower($expected) === \strtolower($this->tag());
     }
 
     public function attributes(): Attributes
