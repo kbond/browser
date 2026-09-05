@@ -1,0 +1,259 @@
+<?php
+
+/*
+ * This file is part of the zenstruck/browser package.
+ *
+ * (c) Kevin Bond <kevinbond@gmail.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Zenstruck\Browser\Session;
+
+use Playwright\Exception\PlaywrightException;
+use Playwright\Locator\LocatorInterface;
+use Playwright\Page\PageInterface;
+use Playwright\Symfony\Client\PlaywrightKernelClient;
+use Symfony\Component\HttpFoundation\Response;
+use Zenstruck\Browser\Session;
+use Zenstruck\Dom;
+use Zenstruck\Dom\Exception\RuntimeException;
+use Zenstruck\Dom\Node;
+use Zenstruck\Dom\Node\Form\Field\Checkbox;
+use Zenstruck\Dom\Node\Form\Field\File;
+use Zenstruck\Dom\Node\Form\Field\Input;
+use Zenstruck\Dom\Node\Form\Field\Radio;
+use Zenstruck\Dom\Node\Form\Field\Select\Combobox;
+use Zenstruck\Dom\Node\Form\Field\Select\Multiselect;
+use Zenstruck\Dom\Node\Form\Field\Select\Option;
+use Zenstruck\Dom\Node\Form\Field\Textarea;
+
+/**
+ * @author Kevin Bond <kevinbond@gmail.com>
+ *
+ * @internal
+ *
+ * @method PlaywrightKernelClient client()
+ */
+final class PlaywrightSession extends Session
+{
+    private ?string $downloadedContent = null;
+
+    public function __construct(PlaywrightKernelClient $client)
+    {
+        parent::__construct($client);
+    }
+
+    public function dom(): Dom
+    {
+        return new Dom($this->client()->getCrawler(), $this);
+    }
+
+    public function content(): string
+    {
+        return $this->downloadedContent ?? (string) $this->page()->content();
+    }
+
+    /**
+     * The kernel's response, which is what carries an exception the browser only renders as text.
+     */
+    public function rawContent(): string
+    {
+        $response = $this->client()->getLastSymfonyResponse();
+
+        if (!$response || false === $body = $response->getContent()) {
+            return $this->content();
+        }
+
+        return $body;
+    }
+
+    public function currentUrl(): string
+    {
+        return $this->page()->url();
+    }
+
+    public function statusCode(): int
+    {
+        return $this->response()->getStatusCode();
+    }
+
+    public function responseHeader(string $header): ?string
+    {
+        return $this->response()->headers->get($header);
+    }
+
+    public function responseHeaders(): array
+    {
+        return $this->response()->headers->all();
+    }
+
+    public function isStarted(): bool
+    {
+        return null !== $this->client()->getLastSymfonyResponse();
+    }
+
+    public function visit(string $uri): void
+    {
+        $this->downloadedContent = null;
+
+        try {
+            // not client()->request(), which rebuilds the url from its parts and drops the fragment
+            $this->client()->visit($this->toPath($uri));
+        } catch (PlaywrightException $e) {
+            if (!\str_contains($e->getMessage(), 'Download is starting')) {
+                throw $e;
+            }
+
+            // the browser downloads attachments instead of rendering them, leaving the page where
+            // it was. The kernel already built the body on this side of the bridge, so serve that
+            $this->downloadedContent = $this->rawContent();
+        }
+    }
+
+    public function click(Node $node): void
+    {
+        $this->downloadedContent = null;
+
+        $this->locatorFor($node)->click();
+        $this->page()->waitForLoadState();
+    }
+
+    public function doubleClick(Node $node): void
+    {
+        $this->downloadedContent = null;
+
+        $before = $this->page()->url();
+
+        $this->locatorFor($node)->dblclick();
+
+        $this->awaitPossibleNavigation($before);
+    }
+
+    public function rightClick(Node $node): void
+    {
+        $this->downloadedContent = null;
+
+        $before = $this->page()->url();
+
+        $this->locatorFor($node)->click(['button' => 'right']);
+
+        $this->awaitPossibleNavigation($before);
+    }
+
+    public function select(Option|Radio|Checkbox $node): void
+    {
+        if ($node instanceof Checkbox || $node instanceof Radio) {
+            $this->locatorFor($node)->check();
+
+            return;
+        }
+
+        $select = $node->selector() ?? throw new RuntimeException('Could not find "select" for "option".');
+        $locator = $this->locatorFor($select);
+
+        if ($select instanceof Combobox) {
+            $this->selectOption($locator, $node->value());
+
+            return;
+        }
+
+        // a multiselect keeps what is already selected
+        $current = \array_filter((array) $locator->evaluate('el => Array.from(el.selectedOptions).map(o => o.value)'), 'is_string');
+
+        $locator->selectOption(\array_values(\array_unique([...$current, $node->value()])));
+    }
+
+    public function unselect(Checkbox|Multiselect $node): void
+    {
+        $locator = $this->locatorFor($node);
+
+        if ($node instanceof Multiselect) {
+            $locator->evaluate('el => { el.selectedIndex = -1; el.dispatchEvent(new Event("change", {bubbles: true})); }');
+
+            return;
+        }
+
+        $locator->uncheck();
+    }
+
+    public function attach(File $node, array $filenames): void
+    {
+        $locator = $this->locatorFor($node);
+
+        if (\count($filenames) > 1 && null === $locator->getAttribute('multiple')) {
+            throw new \InvalidArgumentException('Cannot attach multiple files to a non-multiple file field.');
+        }
+
+        $locator->setInputFiles(\array_values($filenames));
+    }
+
+    public function fill(Textarea|Input $node, string $value): void
+    {
+        $this->locatorFor($node)->fill($value);
+    }
+
+    public function text(Dom\Node $node): string
+    {
+        // innerText falls back to textContent for elements that are not rendered, but a user only
+        // sees what is visible - <title> is the exception, never rendered yet always meaningful
+        return (string) $this->locatorFor($node)->evaluate(
+            "el => 'TITLE' === el.tagName ? el.textContent : (el.checkVisibility() ? el.innerText : '')",
+        );
+    }
+
+    public function isVisible(string $selector): bool
+    {
+        return $this->page()->locator($selector)->first()->isVisible();
+    }
+
+    public function page(): PageInterface
+    {
+        return $this->client()->getPage() ?? throw new RuntimeException('Unable to access the page before visiting a url.');
+    }
+
+    /**
+     * A dblclick/contextmenu handler may navigate by assigning location, which Playwright does not
+     * wait for. Give that a brief chance to happen before reporting the page as settled.
+     */
+    private function awaitPossibleNavigation(string $before): void
+    {
+        try {
+            $this->page()->waitForFunction('url => location.href !== url', $before, ['timeout' => 1000]);
+        } catch (PlaywrightException) {
+            // nothing navigated
+        }
+
+        $this->page()->waitForLoadState();
+    }
+
+    private function selectOption(LocatorInterface $locator, string $value): void
+    {
+        try {
+            $locator->selectOption($value);
+        } catch (\Throwable) {
+            // try selecting by visible text
+            $locator->selectOption(['label' => $value]);
+        }
+    }
+
+    private function toPath(string $url): string
+    {
+        if (!\preg_match('#^https?://#', $url)) {
+            return $url;
+        }
+
+        return (string) \preg_replace('#^https?://[^/]+#', '', $url) ?: '/';
+    }
+
+    private function locatorFor(Node $node): LocatorInterface
+    {
+        return $this->page()->locator('xpath='.$node->element()->getNodePath());
+    }
+
+    private function response(): Response
+    {
+        return $this->client()->getLastSymfonyResponse() ?? throw new RuntimeException('No response available.');
+    }
+}

@@ -75,19 +75,19 @@ final class KernelSession extends Session
         return $this->client()->getInternalRequest()->getUri();
     }
 
-    public function isSuccess(): bool
-    {
-        return $this->statusCode() >= 200 && $this->statusCode() < 300;
-    }
-
-    public function isRedirect(): bool
-    {
-        return $this->statusCode() >= 300 && $this->statusCode() < 400;
-    }
-
     public function statusCode(): int
     {
         return $this->client()->getInternalResponse()->getStatusCode();
+    }
+
+    public function responseHeader(string $header): ?string
+    {
+        return $this->client()->getInternalResponse()->getHeader($header);
+    }
+
+    public function responseHeaders(): array
+    {
+        return $this->client()->getInternalResponse()->getHeaders();
     }
 
     public function isStarted(): bool

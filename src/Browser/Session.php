@@ -31,9 +31,46 @@ abstract class Session implements DomSession
         return $this->client;
     }
 
+    final public function isSuccess(): bool
+    {
+        return $this->statusCode() >= 200 && $this->statusCode() < 300;
+    }
+
+    final public function isRedirect(): bool
+    {
+        return $this->statusCode() >= 300 && $this->statusCode() < 400;
+    }
+
     abstract public function dom(): Dom;
 
     abstract public function content(): string;
 
+    /**
+     * The response body as the server produced it, which a real browser may render rather than show.
+     */
+    public function rawContent(): string
+    {
+        return $this->content();
+    }
+
     abstract public function currentUrl(): string;
+
+    /**
+     * The node's text as a user sees it: a real browser reports what is rendered, not the markup.
+     */
+    public function text(Dom\Node $node): string
+    {
+        return $node->text();
+    }
+
+    abstract public function statusCode(): int;
+
+    abstract public function isStarted(): bool;
+
+    abstract public function responseHeader(string $header): ?string;
+
+    /**
+     * @return array<string,string[]>
+     */
+    abstract public function responseHeaders(): array;
 }

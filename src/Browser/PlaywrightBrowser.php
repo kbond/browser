@@ -12,24 +12,28 @@
 namespace Zenstruck\Browser;
 
 use Playwright\Console\ConsoleMessage;
-use Playwright\Page\PageInterface;
 use Playwright\Symfony\Client\PlaywrightKernelClient;
 use Symfony\Component\BrowserKit\CookieJar;
 use Symfony\Component\Filesystem\Filesystem;
 use Zenstruck\Assert;
 use Zenstruck\Browser;
-use Zenstruck\Browser\Session\Driver\PlaywrightDriver;
 use Zenstruck\Browser\Session\Playwright\CookieJar as PlaywrightCookieJar;
+use Zenstruck\Browser\Session\PlaywrightSession;
+use Zenstruck\Dom\Node;
+use Zenstruck\Dom\Selector;
 
 /**
  * @author Kevin Bond <kevinbond@gmail.com>
  *
  * @experimental
  *
+ * @phpstan-import-type SelectorType from Selector
+ *
  * @method PlaywrightKernelClient client()
  */
 class PlaywrightBrowser extends Browser
 {
+    private PlaywrightSession $session;
     private ?string $screenshotDir;
     private ?string $consoleLogDir;
 
@@ -47,22 +51,14 @@ class PlaywrightBrowser extends Browser
      */
     final public function __construct(PlaywrightKernelClient $client, array $options = [])
     {
-        parent::__construct(new PlaywrightDriver($client), $options);
-
-        if (!($options['follow_redirects'] ?? true)) {
-            $this->interceptRedirects();
-        }
-
-        if (!($options['catch_exceptions'] ?? true)) {
-            $this->throwExceptions();
-        }
+        parent::__construct($this->session = new PlaywrightSession($client), $options);
 
         $this->screenshotDir = $options['screenshot_dir'] ?? null;
         $this->consoleLogDir = $options['console_log_dir'] ?? null;
 
         // subscribe before anything is navigated to, or the messages are already gone
         // @todo also collect uncaught errors once playwright-php exposes the "pageerror" event
-        $this->page()->events()->onConsole(function(ConsoleMessage $message): void {
+        $this->session->page()->events()->onConsole(function(ConsoleMessage $message): void {
             $this->consoleMessages[] = [
                 'type' => $message->type(),
                 'text' => $message->text(),
@@ -76,9 +72,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function assertVisible(string $selector): self
     {
-        $element = $this->session()->assert()->elementExists('css', $selector);
-
-        Assert::true($element->isVisible(), 'Expected element "%s" to be visible but it isn\'t.', [$selector]);
+        Assert::true($this->session->isVisible($selector), 'Expected element "%s" to be visible but it isn\'t.', [$selector]);
 
         return $this;
     }
@@ -88,15 +82,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function assertNotVisible(string $selector): self
     {
-        $element = $this->session()->page()->find('css', $selector);
-
-        if (!$element) {
-            Assert::pass();
-
-            return $this;
-        }
-
-        Assert::false($element->isVisible(), 'Expected element "%s" to not be visible but it is.', [$selector]);
+        Assert::false($this->session->isVisible($selector), 'Expected element "%s" to not be visible but it is.', [$selector]);
 
         return $this;
     }
@@ -116,7 +102,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function waitUntilVisible(string $selector): self
     {
-        $this->page()->waitForSelector($selector, ['state' => 'visible']);
+        $this->session->page()->waitForSelector($selector, ['state' => 'visible']);
 
         return $this;
     }
@@ -126,7 +112,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function waitUntilNotVisible(string $selector): self
     {
-        $this->page()->waitForSelector($selector, ['state' => 'hidden']);
+        $this->session->page()->waitForSelector($selector, ['state' => 'hidden']);
 
         return $this;
     }
@@ -136,7 +122,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function waitUntilSeeIn(string $selector, string $expected): self
     {
-        $this->page()->waitForFunction(
+        $this->session->page()->waitForFunction(
             '([selector, text]) => { const el = document.querySelector(selector); return null !== el && el.checkVisibility() && el.textContent.includes(text); }',
             [$selector, $expected],
         );
@@ -149,10 +135,34 @@ class PlaywrightBrowser extends Browser
      */
     final public function waitUntilNotSeeIn(string $selector, string $expected): self
     {
-        $this->page()->waitForFunction(
+        $this->session->page()->waitForFunction(
             '([selector, text]) => { const el = document.querySelector(selector); return null === el || !el.checkVisibility() || !el.textContent.includes(text); }',
             [$selector, $expected],
         );
+
+        return $this;
+    }
+
+    /**
+     * @param SelectorType $selector
+     *
+     * @return static
+     */
+    final public function doubleClick(Selector|string|callable $selector): self
+    {
+        $this->session->doubleClick($this->clickable($selector));
+
+        return $this;
+    }
+
+    /**
+     * @param SelectorType $selector
+     *
+     * @return static
+     */
+    final public function rightClick(Selector|string|callable $selector): self
+    {
+        $this->session->rightClick($this->clickable($selector));
 
         return $this;
     }
@@ -164,7 +174,7 @@ class PlaywrightBrowser extends Browser
      */
     final public function pause(): self
     {
-        $this->page()->pause();
+        $this->session->page()->pause();
 
         return $this;
     }
@@ -181,11 +191,14 @@ class PlaywrightBrowser extends Browser
         $this->savedScreenshots[] = $filename;
 
         // @todo drop once the node server resolves relative paths against PHP's cwd
-        $this->page()->screenshot(\str_starts_with($filename, '/') ? $filename : \getcwd().'/'.$filename);
+        $this->session->page()->screenshot(\str_starts_with($filename, '/') ? $filename : \getcwd().'/'.$filename);
 
         return $this;
     }
 
+    /**
+     * @return static
+     */
     final public function saveConsoleLog(string $filename): self
     {
         if ($this->consoleLogDir) {
@@ -199,17 +212,19 @@ class PlaywrightBrowser extends Browser
         return $this;
     }
 
+    /**
+     * @return static
+     */
     final public function dumpConsoleLog(): self
     {
-        Session::varDump($this->consoleMessages);
+        Dumper::dump($this->consoleMessages);
 
         return $this;
     }
 
     final public function ddConsoleLog(): void
     {
-        $this->dumpConsoleLog();
-        $this->session()->exit();
+        $this->dumpConsoleLog()->exit();
     }
 
     final public function ddScreenshot(string $filename = 'screenshot.png'): void
@@ -218,7 +233,20 @@ class PlaywrightBrowser extends Browser
 
         echo \sprintf("\n\nScreenshot saved as \"%s\".\n\n", \end($this->savedScreenshots));
 
-        $this->session()->exit();
+        $this->exit();
+    }
+
+    final public function dump(Selector|string|callable|null $selector = null): self
+    {
+        if (!$selector) {
+            Dumper::dump($this->source(true));
+
+            return $this;
+        }
+
+        $this->dom()->dump($selector);
+
+        return $this;
     }
 
     final public function saveCurrentState(string $filename): void
@@ -240,36 +268,54 @@ class PlaywrightBrowser extends Browser
         );
     }
 
-    final public function doubleClick(string $selector): self
+    /**
+     * @internal
+     */
+    final protected function doVisit(string $uri): void
     {
-        $element = $this->getClickableElement($selector);
-        $element->doubleClick();
-
-        return $this;
-    }
-
-    final public function rightClick(string $selector): self
-    {
-        $element = $this->getClickableElement($selector);
-        $element->rightClick();
-
-        return $this;
+        $this->session->visit($uri);
     }
 
     /**
      * @internal
      */
-    protected function cookieJar(): CookieJar
+    final protected function cookieJar(): CookieJar
     {
-        return new PlaywrightCookieJar($this->page());
+        return new PlaywrightCookieJar($this->session->page());
     }
 
-    private function page(): PageInterface
+    /**
+     * @internal
+     */
+    final protected function source(bool $debug): string
     {
-        if (!$page = $this->client()->getPage()) {
-            throw new \RuntimeException('The Playwright page is not available.');
+        $ret = '';
+
+        if ($debug) {
+            $ret .= "<!--\n";
+            $ret .= "URL: {$this->session->currentUrl()} ({$this->session->statusCode()})\n\n";
+
+            foreach ($this->session->responseHeaders() as $header => $values) {
+                foreach ((array) $values as $value) {
+                    $ret .= "{$header}: {$value}\n";
+                }
+            }
+
+            $ret .= "-->\n";
         }
 
-        return $page;
+        return $ret.$this->content();
+    }
+
+    /**
+     * @param SelectorType $selector
+     */
+    private function clickable(Selector|string|callable $selector): Node
+    {
+        $node = $this->dom()->findOrFail(Selector::clickable($selector));
+
+        Assert::true($node->isVisible(), 'Clickable element "%s" is not visible.', [$selector]);
+
+        return $node;
     }
 }
