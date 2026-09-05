@@ -312,7 +312,8 @@ class KernelBrowser extends Browser
     final public function request(string $method, string $url, array|HttpOptions $options = []): self
     {
         if ($this->defaultHttpOptions) {
-            $options = $this->defaultHttpOptions->merge($options);
+            // clone to avoid HttpOptions::merge() mutating the default options
+            $options = (clone $this->defaultHttpOptions)->merge($options);
         }
 
         $options = HttpOptions::create($options);

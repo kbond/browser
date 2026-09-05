@@ -53,6 +53,10 @@ public function testViewPostAndAddComment()
 composer require zenstruck/browser --dev
 ```
 
+## Security Policy
+
+If you discover a security vulnerability, please do not open a public issue or pull request. Instead, please review this repository's [Security Policy](https://github.com/zenstruck/browser/security) for instructions on how to report it responsibly.
+
 Optionally, enable the provided extension in your `phpunit.xml`:
 
 - PHPUnit 8 or 9 :
@@ -82,11 +86,13 @@ This extension provides the following features:
 
 ## Usage
 
-This library provides 1 "browser":
+This library provides 2 different "browsers":
 
 1. [KernelBrowser](#kernelbrowser): makes requests using your Symfony Kernel *(fast)*.
+2. [PlaywrightBrowser](#playwrightbrowser): drives a real browser with `playwright-php/playwright-symfony` but passes
+   its requests to your Symfony Kernel, so no webserver is required *(slow)*.
 
-You can use this Browser in your tests by having your test class use the `HasBrowser` trait:
+You can use these Browsers in your tests by having your test class use the `HasBrowser` trait:
 
 ```php
 namespace App\Tests;
@@ -112,7 +118,7 @@ class MyTest extends TestCase
 }
 ```
 
-All browsers have the following methods:
+Both browsers have the following methods:
 
 ```php
 /** @var \Zenstruck\Browser $browser **/
@@ -151,6 +157,14 @@ $browser
     ->assertElementAttributeContains('head meta[name=description]', 'content', 'my description')
     ->assertElementAttributeNotContains('head meta[name=description]', 'content', 'my description')
 
+    // response assertions
+    ->assertStatus(200)
+    ->assertSuccessful() // 2xx status code
+    ->assertHeaderEquals('Content-Type', 'text/html; charset=UTF-8')
+    ->assertHeaderContains('Content-Type', 'html')
+    ->assertHeaderEquals('X-Not-Present-Header', null)
+    ->assertContentType('zip')
+
     // form field assertions
     ->assertFieldEquals('Username', 'kevin')
     ->assertFieldNotEquals('Username', 'john')
@@ -186,6 +200,10 @@ $browser
         $cookieJar->expire('MOCKSESSID');
     })
 
+    ->use(function(\Psr\Container\ContainerInterface $container) {
+        // access your app's service container
+    })
+
     ->use(function(\Zenstruck\Browser $browser, \Symfony\Component\DomCrawler\Crawler $crawler) {
         // access the current Browser instance and the current crawler
     })
@@ -213,93 +231,12 @@ $browser
 ;
 ```
 
-### KernelBrowser
+### Authentication
 
-This browser has the following methods:
-
-```php
-/** @var \Zenstruck\Browser\KernelBrowser $browser **/
-
-$browser
-    // response assertions
-    ->assertStatus(200)
-    ->assertSuccessful() // 2xx status code
-    ->assertRedirected() // 3xx status code
-    ->assertHeaderEquals('Content-Type', 'text/html; charset=UTF-8')
-    ->assertHeaderContains('Content-Type', 'html')
-    ->assertHeaderEquals('X-Not-Present-Header', null)
-
-    // helpers for quickly checking the content type
-    ->assertJson()
-    ->assertXml()
-    ->assertHtml()
-    ->assertContentType('zip')
-
-    // by default, exceptions are caught and converted to a response
-    // use the BROWSER_CATCH_EXCEPTIONS environment variable to change default
-    // this disables that behaviour allowing you to use TestCase::expectException()
-    ->throwExceptions()
-
-    // enable catching exceptions
-    ->catchExceptions()
-
-    // by default, the kernel is rebooted between requests
-    // this disables this behaviour
-    ->disableReboot()
-
-    // re-enable rebooting between requests if previously disabled
-    ->enableReboot()
-
-    // enable the profiler for the next request (if not globally enabled)
-    ->withProfiling()
-
-    // by default, redirects are followed, this disables that behaviour
-    // use the BROWSER_FOLLOW_REDIRECTS environment variable to change default
-    ->interceptRedirects()
-
-    // enable following redirects
-    // if currently on a redirect response, follows
-    ->followRedirects()
-
-    // Follows a redirect if ->interceptRedirects() has been turned on
-    ->followRedirect() // follows all redirects by default
-    ->followRedirect(1) // just follow 1 redirect
-
-    // combination of assertRedirected(), followRedirect(), assertOn()
-    ->assertRedirectedTo('/some/page') // follows all redirects by default
-    ->assertRedirectedTo('/some/page', 1) // just follow 1 redirect
-
-    // combination of interceptRedirects(), withProfiling(), click()
-    // useful for submitting forms and making assertions on the "redirect response"
-    ->clickAndIntercept('button')
-
-    // exception assertions for the "next request"
-    ->expectException(MyException::class, 'the message')
-    ->post('/url/that/throws/exception') // fails if above exception not thrown
-
-    ->expectException(MyException::class, 'the message')
-    ->click('link or button') // fails if above exception not thrown
-;
-
-// Access the Symfony Profiler for the last request
-$queryCount = $browser
-    // If profiling is not globally enabled for tests, ->withProfiling()
-    // must be called before the request.
-    ->profile()->getCollector('db')->getQueryCount()
-;
-
-// "use" a specific data collector
-$browser->use(function(\Symfony\Component\HttpKernel\DataCollector\RequestDataCollector $collector) {
-    // ...
-})
-```
-
-#### Authentication
-
-The _KernelBrowser_ has helpers and assertions for authentication:
+Both browsers have helpers and assertions for authentication:
 
 ```php
-/** @var \Zenstruck\Browser\KernelBrowser $browser **/
+/** @var \Zenstruck\Browser $browser **/
 
 $browser
     // authenticate a user for subsequent actions
@@ -319,7 +256,7 @@ $browser
 ;
 ```
 
-##### Troubleshooting Authentication
+#### Troubleshooting Authentication
 
 > `LogicException: Cannot create the remember-me cookie; no master request available.`
 > exception when calling `->assertAuthenticated()`
@@ -334,6 +271,111 @@ previous request didn't perform any security-related operations. Possible soluti
 3. Set `framework.profiler.collect: true` in your test environment. This enables the profiler
    for all requests removing the need to ever call `->withProfiling()` but can slow down
    your tests.
+
+### Exceptions
+
+Exceptions thrown while handling a request are caught and converted to a response, as they are in
+production. Both browsers can turn this off:
+
+```php
+/** @var \Zenstruck\Browser $browser **/
+
+$browser
+    // stop converting exceptions to responses, so they can be caught
+    // use the BROWSER_CATCH_EXCEPTIONS environment variable to change the default
+    // allows using TestCase::expectException()
+    ->throwExceptions()
+
+    // start catching them again
+    ->catchExceptions()
+
+    // exception assertions for the "next request"
+    ->expectException(MyException::class, 'the message')
+    ->click('link or button') // fails if the above exception is not thrown
+;
+```
+
+### Redirects
+
+By default, redirects are followed. Both browsers can stop on them instead:
+
+```php
+/** @var \Zenstruck\Browser $browser **/
+
+$browser
+    // stop on redirect responses instead of following them
+    // use the BROWSER_FOLLOW_REDIRECTS environment variable to change the default
+    ->interceptRedirects()
+
+    // follow again, and follow the current response if it is a redirect
+    ->followRedirects()
+
+    ->assertRedirected() // 3xx status code
+
+    // follow a redirect that was intercepted
+    ->followRedirect() // follows all redirects by default
+    ->followRedirect(1) // just follow 1 redirect
+
+    // combination of assertRedirected(), followRedirect(), assertOn()
+    ->assertRedirectedTo('/some/page') // follows all redirects by default
+    ->assertRedirectedTo('/some/page', 1) // just follow 1 redirect
+
+    // combination of interceptRedirects(), withProfiling(), click()
+    // useful for submitting forms and making assertions on the "redirect response"
+    ->clickAndIntercept('button')
+;
+```
+
+> [!NOTE]
+> While intercepting, the `PlaywrightBrowser` parks the real browser on the url that redirected and
+> renders nothing, since no response is delivered to it. The status and `Location` are still
+> available for assertions.
+
+### Profiling
+
+Both browsers expose the Symfony profiler:
+
+```php
+/** @var \Zenstruck\Browser $browser **/
+
+// enable the profiler for the next request (not required if profiling is globally enabled)
+$queryCount = $browser
+    ->withProfiling()
+    ->visit('/my/page')
+    ->profile()->getCollector('db')->getQueryCount()
+;
+
+// "use" a specific data collector from the last request
+$browser->use(function(\Symfony\Component\HttpKernel\DataCollector\RequestDataCollector $collector) {
+    // ...
+});
+```
+
+### KernelBrowser
+
+This browser has the following methods:
+
+```php
+/** @var \Zenstruck\Browser\KernelBrowser $browser **/
+
+$browser
+    // helpers for quickly checking the content type
+    ->assertJson()
+    ->assertXml()
+    ->assertHtml()
+
+    // by default, the kernel is rebooted between requests
+    // this disables this behaviour
+    ->disableReboot()
+
+    // re-enable rebooting between requests if previously disabled
+    ->enableReboot()
+
+    // exception assertions also work for the http methods below
+    ->expectException(MyException::class, 'the message')
+    ->post('/url/that/throws/exception') // fails if above exception not thrown
+;
+```
 
 #### HTTP Requests
 
@@ -440,6 +482,156 @@ $json = $browser
 > [!NOTE]
 > See the [full `zenstruck/assert` expectation API documentation](https://github.com/zenstruck/assert#expectation-api)
 > to see all the methods available on `Zenstruck\Browser\Json`.
+
+### PlaywrightBrowser
+
+> [!NOTE]
+> The `PlaywrightBrowser` is experimental and may be subject to BC Breaks.
+
+This drives a real browser so you can test javascript, but it does not start a webserver: requests
+made by the browser are intercepted and passed to *your* booted kernel. The browser therefore talks
+to the same application instance (and container) as your test, so mocked services, an in-memory
+database and the profiler behave as they do with the [`KernelBrowser`](#kernelbrowser).
+
+It requires [playwright-php/playwright-symfony](https://github.com/playwright-php/playwright-symfony)
+(PHP 8.2+/Symfony 6.4+), Node.js 20+, and the Playwright browsers:
+
+```
+composer require --dev playwright-php/playwright-symfony
+vendor/bin/playwright-install --browsers
+```
+
+> [!NOTE]
+> If `PlaywrightSymfonyBundle` is registered and enabled, its configuration (base url, intercepted
+> hosts, asset server) is used.
+
+It requires your test to extend `KernelTestCase` (or `WebTestCase`):
+
+```php
+namespace App\Tests;
+
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Zenstruck\Browser\Test\HasBrowser;
+
+class MyTest extends KernelTestCase
+{
+    use HasBrowser;
+
+    public function test_using_playwright_browser(): void
+    {
+        $this->playwrightBrowser()
+            ->visit('/my/page')
+            ->assertSee('some text')
+        ;
+    }
+}
+```
+
+> [!WARNING]
+> Do not extend `Playwright\Symfony\Test\PlaywrightTestCase`. It manages its own browser and
+> sessions, which would conflict with the ones managed here - a `LogicException` is thrown if you
+> try.
+
+Choose the engine with the `PLAYWRIGHT_BROWSER` env variable (`chromium` _(default)_, `firefox` or
+`webkit`), and set `PLAYWRIGHT_HEADLESS=false` to watch the browser as it runs.
+
+This browser has the following extra methods:
+
+```php
+/** @var \Zenstruck\Browser\PlaywrightBrowser $browser **/
+
+$browser
+    // open the Playwright Inspector and pause the test
+    ->pause()
+
+    // take a screenshot of the current browser state
+    // by default, saves to "<project-root>/var/browser/screenshots"
+    // configure with "BROWSER_SCREENSHOT_DIR" env variable
+    ->takeScreenshot('screenshot.png')
+
+    // save the browser's javascript console log
+    // by default, saves to "<project-root>/var/browser/console-logs"
+    // configure with "BROWSER_CONSOLE_LOG_DIR" env variable
+    ->saveConsoleLog('console.log')
+
+    // check if element is visible in the browser
+    ->assertVisible('.selector')
+    ->assertNotVisible('.selector')
+
+    // wait x milliseconds
+    ->wait(1000) // 1 second
+
+    // these return as soon as the condition is met
+    ->waitUntilVisible('.selector')
+    ->waitUntilNotVisible('.selector')
+    ->waitUntilSeeIn('.selector', 'some text')
+    ->waitUntilNotSeeIn('.selector', 'some text')
+
+    ->doubleClick('Link')
+    ->rightClick('Link')
+
+    // dump() the browser's console log
+    ->dumpConsoleLog()
+
+    // dd() the browser's console log
+    ->ddConsoleLog()
+
+    // dd() and take screenshot (default filename is "screenshot.png")
+    ->ddScreenshot()
+;
+```
+
+> [!NOTE]
+> Uncaught javascript errors are not included in the console log: Playwright reports these as a
+> separate `pageerror` event which `playwright-php` does not yet expose.
+
+### Multiple Browser Instances
+
+Within your test, you can call `->xBrowser()` methods multiple times to get
+different browser instances. This could be useful for testing an app with
+real-time capabilities (ie websockets):
+
+```php
+namespace App\Tests;
+
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Zenstruck\Browser\Test\HasBrowser;
+
+class MyTest extends KernelTestCase
+{
+    use HasBrowser;
+
+    public function testDemo(): void
+    {
+        $browser1 = $this->playwrightBrowser()
+            ->visit('/my/page')
+            // ...
+        ;
+
+        $browser2 = $this->playwrightBrowser()
+            ->visit('/my/page')
+            // ...
+        ;
+    }
+}
+```
+
+Each `playwrightBrowser()` call gets its own browser context, isolated from the others in cookies
+and storage, while sharing one browser process. They also share the kernel booted for the test, so
+they see the same application state, just as separate browsers hitting one webserver would.
+
+### Parallel Testing
+
+Both browsers work with [ParaTest](https://github.com/paratestphp/paratest). Each worker is a
+separate PHP process with its own browser, launched only if that worker runs a test needing one.
+
+Saved artifacts work as usual: each worker writes to the configured directories, and a failure
+still saves the source, screenshot and console log. The summary printed at the end of a serial run
+is not shown, as ParaTest does not surface worker output by then.
+
+> [!NOTE]
+> Expect one browser per worker: `--processes 8` means up to eight browsers, each with its own Node
+> process, so pick a number your machine and CI runner can carry.
 
 ### Advanced DOM Selectors
 
@@ -561,13 +753,19 @@ $browser->assertSeeElement(ProductLinkSelector('Product 1', 'Edit'));
 
 There are several environment variables available to configure:
 
-| Variable                         | Description                                                                                                            | Default                            |
-|----------------------------------|------------------------------------------------------------------------------------------------------------------------|------------------------------------|
-| `BROWSER_SOURCE_DIR`             | Directory to save source files to.                                                                                     | `./var/browser/source`             |
-| `BROWSER_FOLLOW_REDIRECTS`       | Whether to follow redirects by default (only applies to `KernelBrowser`).                                              | `1` _(true)_                       |
-| `BROWSER_CATCH_EXCEPTIONS`       | Whether to catch exceptions by default (only applies to `KernelBrowser`).                                              | `1` _(true)_                       |
-| `BROWSER_SOURCE_DEBUG`           | Whether to add request metadata to written source files (only applies to `KernelBrowser`).                             | `0` _(false)_                      |
-| `KERNEL_BROWSER_CLASS`           | `KernelBrowser` class to use.                                                                                          | `Zenstruck\Browser\KernelBrowser`  |
+| Variable                   | Description                                                                                     | Default                               |
+|----------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------|
+| `BROWSER_SOURCE_DIR`       | Directory to save source files to.                                                              | `./var/browser/source`                |
+| `BROWSER_SCREENSHOT_DIR`   | Directory to save screenshots to (only applies to `PlaywrightBrowser`).                         | `./var/browser/screenshots`           |
+| `BROWSER_CONSOLE_LOG_DIR`  | Directory to save javascript console logs to (only applies to `PlaywrightBrowser`).             | `./var/browser/console-logs`          |
+| `BROWSER_FOLLOW_REDIRECTS` | Whether to follow redirects by default.                                                         | `1` _(true)_                          |
+| `BROWSER_CATCH_EXCEPTIONS` | Whether to catch exceptions by default.                                                         | `1` _(true)_                          |
+| `BROWSER_SOURCE_DEBUG`     | Whether to add request metadata to written source files (only applies to `KernelBrowser`).      | `0` _(false)_                         |
+| `KERNEL_BROWSER_CLASS`     | `KernelBrowser` class to use.                                                                   | `Zenstruck\Browser\KernelBrowser`     |
+| `PLAYWRIGHT_BROWSER_CLASS` | `PlaywrightBrowser` class to use.                                                               | `Zenstruck\Browser\PlaywrightBrowser` |
+| `PLAYWRIGHT_BROWSER`       | Browser engine to use: `chromium`, `firefox` or `webkit` (only applies to `PlaywrightBrowser`). | `chromium`                            |
+| `PLAYWRIGHT_HEADLESS`      | Set to `false` to watch the browser (only applies to `PlaywrightBrowser`).                      | `true`                                |
+| `BROWSER_FILE_LINK_FORMAT` | Turns file paths seen in `Saved Browser Artifacts` into links that open in your editor.         | `file://%f#L%l`                       |
 
 ## Extending
 
@@ -828,6 +1026,7 @@ class AppBrowser extends KernelBrowser
 Then, depending on the implementation you extended from, set the appropriate env variable:
 
 * `KernelBrowser`: `KERNEL_BROWSER_CLASS`
+* `PlaywrightBrowser`: `PLAYWRIGHT_BROWSER_CLASS`
 
 For the example above, you would set `KERNEL_BROWSER_CLASS=App\Tests\AppBrowser`.
 

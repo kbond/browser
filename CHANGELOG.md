@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## [v1.12.0](https://github.com/zenstruck/browser/releases/tag/v1.12.0)
+
+August 24th, 2026 - [v1.11.0...v1.12.0](https://github.com/zenstruck/browser/compare/v1.11.0...v1.12.0)
+
+* 3716980 feat(playwright): use the playwright bundle configuration when registered (#206) by @kbond
+* 610be4f test: support phpunit 11, 12 and 13, and run the suite with paratest (#205) by @kbond
+* f7df9e3 chore: drop EOL Symfony 8.0 from the ci matrix (#205) by @kbond
+* f59df24 test: enable and cover the browser extension (#205) by @kbond
+* 00cb74a chore: remove stray `attachment.zip` from the project root (#205) by @kbond
+* e0d7b34 test: run the suite with paratest (#205) by @kbond
+* 2bccfee test: support phpunit 11, 12 and 13 (#205) by @kbond
+* 284ac22 fix: Mink deprecation (#203) by @kbond
+
+## [v1.11.0](https://github.com/zenstruck/browser/releases/tag/v1.11.0)
+
+August 23rd, 2026 - [v1.10.1...v1.11.0](https://github.com/zenstruck/browser/compare/v1.10.1...v1.11.0)
+
+* bc55af1 docs: document the shared redirect and profiling api (#198) by @kbond
+* 8cd15fe fix: honor `BROWSER_FOLLOW_REDIRECTS` in the `PlaywrightBrowser` (#198) by @kbond
+* 8be888f feat: Add `PlaywrightBrowser` (#195) by @kbond
+* fc18b96 fix: phpstan doc comment (#178) by @flohw
+* a3d56cc feat: make saved artifact paths clickable (#165) by @aaa2000, LDA
+* 9394362 fix: detect Symfony 7.4+ exception pages (#197) by @kbond
+* 88dfebd doc: Standardize `README` security policy section (#193) by @Copilot
+* 7566f2e chore!: bump minimum PHP version to 8.2 (#196) by @kbond
+
+## [v1.10.1](https://github.com/zenstruck/browser/releases/tag/v1.10.1)
+
+May 28th, 2026 - [v1.10.0...v1.10.1](https://github.com/zenstruck/browser/compare/v1.10.0...v1.10.1)
+
+* 1674f9c fix: mink deprecation (#192) by @kbond
+
 ## [v1.10.0](https://github.com/zenstruck/browser/releases/tag/v1.10.0)
 
 January 8th, 2026 - [v1.9.1...v1.10.0](https://github.com/zenstruck/browser/compare/v1.9.1...v1.10.0)

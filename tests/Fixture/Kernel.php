@@ -11,6 +11,7 @@
 
 namespace Zenstruck\Browser\Tests\Fixture;
 
+use Playwright\Symfony\PlaywrightSymfonyBundle;
 use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -152,7 +153,7 @@ final class Kernel extends BaseKernel
 
     public function login(): Response
     {
-        return new Response();
+        return new Response(\file_get_contents(__DIR__.'/files/login.html'));
     }
 
     public function logout(): Response
@@ -172,6 +173,7 @@ final class Kernel extends BaseKernel
     {
         yield new FrameworkBundle();
         yield new SecurityBundle();
+        yield new PlaywrightSymfonyBundle();
     }
 
     protected function configureContainer(ContainerBuilder $c, LoaderInterface $loader): void
@@ -194,6 +196,7 @@ final class Kernel extends BaseKernel
                 'provider' => 'users',
                 'form_login' => [
                     'check_path' => '/login',
+                    'default_target_path' => '/page1',
                 ],
                 'logout' => true,
                 'remember_me' => [

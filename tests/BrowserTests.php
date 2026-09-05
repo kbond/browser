@@ -12,16 +12,23 @@
 namespace Zenstruck\Browser\Tests;
 
 use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use Psr\Container\ContainerInterface;
 use Symfony\Component\BrowserKit\AbstractBrowser;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\BrowserKit\CookieJar;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\HttpKernel\Kernel;
+use Symfony\Component\HttpKernel\DataCollector\RequestDataCollector;
+use Symfony\Component\Security\Core\Authentication\Token\RememberMeToken;
+use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Component\Security\Core\User\InMemoryUser;
 use Symfony\Component\VarDumper\VarDumper;
 use Zenstruck\Assert;
 use Zenstruck\Browser;
 use Zenstruck\Browser\Test\HasBrowser;
+use Zenstruck\Browser\Test\LegacyExtension;
 use Zenstruck\Browser\Tests\Fixture\TestComponent1;
 use Zenstruck\Browser\Tests\Fixture\TestComponent2;
 use Zenstruck\Callback\Exception\UnresolveableArgument;
@@ -39,6 +46,222 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
+    public function fails_if_trying_to_manipulate_exception_page(): void
+    {
+        Assert::that(function() {
+            $this->browser()
+                ->visit('/exception')
+                ->click('foo')
+            ;
+        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
+
+        Assert::that(function() {
+            $this->browser()
+                ->visit('/exception')
+                ->fillField('foo', 'bar')
+            ;
+        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
+
+        Assert::that(function() {
+            $this->browser()
+                ->visit('/exception')
+                ->assertSee('foo')
+            ;
+        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_enable_exception_throwing(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('exception thrown');
+
+        $this->browser()
+            ->throwExceptions()
+            ->visit('/exception')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_re_enable_catching_exceptions(): void
+    {
+        $browser = $this->browser();
+
+        try {
+            $browser->throwExceptions()->visit('/exception');
+        } catch (\Exception $e) {
+            $browser
+                ->catchExceptions()
+                ->visit('/exception')
+                ->assertStatus(500)
+            ;
+
+            return;
+        }
+
+        $this->fail('Exception was not caught.');
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function exceptions_are_caught_by_default(): void
+    {
+        $this->browser()
+            ->visit('/exception')
+            ->assertStatus(500)
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function fails_if_expected_exception_not_thrown(): void
+    {
+        // visit
+        Assert::that(
+            function() {
+                $this->browser()
+                    ->expectException(\RuntimeException::class)
+                    ->visit('/page1')
+                ;
+            },
+        )
+            ->throws(AssertionFailedError::class, 'No exception thrown. Expected "RuntimeException".')
+        ;
+
+        // click link
+        Assert::that(
+            function() {
+                $this->browser()
+                    ->visit('/page1')
+                    ->expectException(\RuntimeException::class)
+                    ->click('a link')
+                ;
+            },
+        )
+            ->throws(AssertionFailedError::class, 'No exception thrown. Expected "RuntimeException".')
+        ;
+
+        // submit form
+        Assert::that(
+            function() {
+                $this->browser()
+                    ->visit('/page1')
+                    ->expectException(\RuntimeException::class)
+                    ->click('Submit')
+                ;
+            },
+        )
+            ->throws(AssertionFailedError::class, 'No exception thrown. Expected "RuntimeException".')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_expect_exception_for_form_submit(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            ->expectException(\RuntimeException::class, 'fail!')
+            ->click('Submit Exception')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_expect_exception_for_link_click(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            // a real browser gets no response for a request the kernel failed to answer, so it
+            // stays where it was: the url after the click is not part of the shared behaviour
+            ->expectException(\Exception::class, 'exception thrown')
+            ->click('exception link')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function fails_if_acting_after_an_expected_exception(): void
+    {
+        // the throwing request never produced a response, the previous page is still loaded
+        Assert::that(function() {
+            $this->browser()
+                ->visit('/page1')
+                ->expectException(\Exception::class, 'exception thrown')
+                ->visit('/exception')
+                ->assertSee('h1 title')
+            ;
+        })->throws(AssertionFailedError::class, 'The last request threw the expected exception: make another request before continuing.');
+
+        // without a previous request there is no page at all
+        Assert::that(function() {
+            $this->browser()
+                ->expectException(\Exception::class, 'exception thrown')
+                ->visit('/exception')
+                ->click('a link')
+            ;
+        })->throws(AssertionFailedError::class, 'The last request threw the expected exception: make another request before continuing.');
+
+        // a new request makes the browser usable again
+        $this->browser()
+            ->expectException(\Exception::class, 'exception thrown')
+            ->visit('/exception')
+            ->visit('/page1')
+            ->assertSee('h1 title')
+        ;
+    }
+
+    /**
+     * @test
+     *
+     * @dataProvider responseAccessorProvider
+     */
+    #[Test]
+    #[DataProvider('responseAccessorProvider')]
+    public function fails_if_reading_the_response_when_the_request_threw(callable $accessor): void
+    {
+        Assert::that(function() use ($accessor) {
+            $browser = $this->browser()
+                ->visit('/page1')
+                ->expectException(\Exception::class, 'exception thrown')
+                ->visit('/exception')
+            ;
+
+            $accessor($browser);
+        })->throws(AssertionFailedError::class, 'The last request threw the expected exception: make another request before continuing.');
+    }
+
+    /**
+     * These read the response without going through page(), so they need the check of their own.
+     */
+    public static function responseAccessorProvider(): iterable
+    {
+        yield 'assertStatus' => [static fn(Browser $browser) => $browser->assertStatus(200)];
+        yield 'assertSuccessful' => [static fn(Browser $browser) => $browser->assertSuccessful()];
+        yield 'crawler' => [static fn(Browser $browser) => $browser->crawler()];
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
     public function multiple_browsers(): void
     {
         $browser1 = $this->browser()
@@ -58,6 +281,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function assert_on(): void
     {
         $this->browser()
@@ -79,6 +303,8 @@ trait BrowserTests
      *
      * @dataProvider encodedUrlProvider
      */
+    #[Test]
+    #[DataProvider('encodedUrlProvider')]
     public function assert_on_encoded($url, $expected): void
     {
         $this->browser()
@@ -102,6 +328,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_use_current_browser(): void
     {
         $browser = $this->browser();
@@ -122,6 +349,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_use_components(): void
     {
         $this->browser()
@@ -135,6 +363,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function component_pre_assertions_and_actions_are_called(): void
     {
         $this->browser()
@@ -148,6 +377,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_use_crawler(): void
     {
         $this->browser()
@@ -161,6 +391,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_use_cookie_jar(): void
     {
         $this->browser()
@@ -174,6 +405,53 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
+    public function can_manipulate_cookies(): void
+    {
+        $expires = \time() + 3600;
+
+        $this->browser()
+            ->visit('/page1?start-session=1')
+            ->use(function(CookieJar $jar) use ($expires) {
+                $this->assertNull($jar->get('not-a-cookie'));
+
+                $jar->set(new Cookie('mine', 'a value', (string) $expires, '/', 'localhost', false, true, false, 'lax'));
+
+                $cookie = $jar->get('mine');
+
+                $this->assertNotNull($cookie);
+                $this->assertSame('a value', $cookie->getValue());
+                $this->assertSame($expires, (int) $cookie->getExpiresTime());
+                $this->assertSame('/', $cookie->getPath());
+                $this->assertTrue($cookie->isHttpOnly());
+                $this->assertSame('lax', $cookie->getSameSite());
+                $this->assertNotNull($jar->get('mine', '/', 'localhost'), 'visible for its own domain');
+                $this->assertContains('mine', \array_map(static fn(Cookie $c) => $c->getName(), $jar->all()));
+
+                // cookies are scoped to their path
+                $jar->set(new Cookie('scoped', 'value', null, '/page1'));
+
+                $this->assertNull($jar->get('scoped'), 'not visible at "/"');
+                $this->assertNotNull($jar->get('scoped', '/page1'), 'visible at "/page1"');
+                $this->assertNotNull($jar->get('scoped', '/page1/sub'), 'visible below "/page1"');
+
+                $jar->expire('mine');
+
+                $this->assertNull($jar->get('mine'));
+                $this->assertNotNull($jar->get('MOCKSESSID'));
+
+                $jar->clear();
+
+                $this->assertNull($jar->get('MOCKSESSID'));
+                $this->assertSame([], $jar->all());
+            })
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
     public function with_can_accept_multiple_browsers_and_components(): void
     {
         $browser = $this->browser();
@@ -193,6 +471,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function invalid_use_callback_parameter_throws_type_error(): void
     {
         $this->expectException(UnresolveableArgument::class);
@@ -203,6 +482,166 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
+    public function following_redirect_follows_all_by_default(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->assertOn('/redirect1')
+            ->followRedirect()
+            ->assertOn('/page1')
+            ->assertSuccessful()
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_re_enable_following_redirects(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->assertOn('/redirect1')
+            ->followRedirects()
+            ->visit('/redirect1')
+            ->assertOn('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function calling_follow_redirects_when_the_response_is_a_redirect_follows_the_redirect(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->followRedirects()
+            ->assertOn('/page1')
+            ->interceptRedirects()
+            ->visit('/page1')
+            ->followRedirects()
+            ->assertOn('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function calling_follow_redirects_before_a_request_has_been_made_just_enables_following_redirects(): void
+    {
+        $this->browser()
+            ->followRedirects()
+            ->visit('/redirect1')
+            ->assertOn('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_limit_redirects_followed(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->assertOn('/redirect1')
+            ->assertRedirected()
+            ->followRedirect(1)
+            ->assertOn('/redirect2')
+            ->assertRedirected()
+            ->followRedirect(1)
+            ->assertOn('/redirect3')
+            ->assertRedirected()
+            ->followRedirect(1)
+            ->assertOn('/page1')
+            ->assertSuccessful()
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function assert_redirected_to_follows_all_redirects_by_default(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->assertRedirectedTo('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function assert_redirected_to_can_configure_number_of_redirects_to_follow(): void
+    {
+        $this->browser()
+            ->interceptRedirects()
+            ->visit('/redirect1')
+            ->assertRedirectedTo('/redirect2', 1)
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function exception_thrown_if_asserting_redirected_and_not_intercepting_redirects(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot assert redirected if not intercepting redirects. Call ->interceptRedirects() before making the request.');
+
+        $this->browser()
+            ->visit('/redirect1')
+            ->assertRedirected()
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function exception_thrown_if_asserting_redirected_to_and_not_intercepting_redirects(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot assert redirected if not intercepting redirects. Call ->interceptRedirects() before making the request.');
+
+        $this->browser()
+            ->visit('/redirect1')
+            ->assertRedirectedTo('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function click_and_intercept(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            ->clickAndIntercept('Submit Redirect')
+            ->assertOn('/submit-form')
+            ->use(function(RequestDataCollector $collector) {
+                $this->assertSame('/submit-form', $collector->getPathInfo());
+            })
+            ->assertRedirectedTo('/page1')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
     public function redirects_are_followed_by_default(): void
     {
         $this->browser()
@@ -214,6 +653,205 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
+    public function response_header_assertions(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            ->assertHeaderEquals('Content-Type', 'text/html; charset=UTF-8')
+            ->assertHeaderContains('Content-Type', 'text/html')
+            ->assertHeaderEquals('X-Not-Present-Header', null)
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function response_status_assertions(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            ->assertStatus(200)
+            ->assertSuccessful()
+            ->assertContentType('text/html')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_use_container_as_typehint(): void
+    {
+        $this->browser()
+            ->use(function(ContainerInterface $container) {
+                // a private service: only the test container can resolve it
+                $this->assertTrue($container->has('security.token_storage'));
+            })
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_act_as_user(): void
+    {
+        $this->browser()
+            ->actingAs(new InMemoryUser('kevin', 'pass'))
+            ->visit('/user')
+            ->assertSee('user: kevin/pass')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_make_authentication_assertions(): void
+    {
+        $username = 'kevin';
+        $user = new InMemoryUser('kevin', 'pass');
+
+        $this->browser()
+            ->assertNotAuthenticated()
+            ->actingAs($user)
+            ->assertAuthenticated()
+            ->assertAuthenticated($username)
+            ->assertAuthenticated($user)
+            ->visit('/user')
+            ->assertAuthenticated()
+            ->assertAuthenticated($username)
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_check_if_not_authenticated_after_request(): void
+    {
+        $this->browser()
+            ->visit('/page1')
+            ->assertNotAuthenticated()
+            ->assertSeeIn('a', 'a link')
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_login_with_a_form_and_be_remembered(): void
+    {
+        $this->browser()
+            ->visit('/login')
+            ->fillField('Username', 'kevin')
+            ->fillField('Password', 'pass')
+            ->checkField('Remember me')
+            ->click('Log in')
+            ->assertOn('/page1')
+            ->assertAuthenticated('kevin')
+            ->visit('/user')
+            ->assertSee('user: kevin/pass/'.UsernamePasswordToken::class)
+
+            // dropping the session leaves only the remember-me cookie to authenticate with
+            ->use(function(CookieJar $cookies) {
+                $this->assertNotNull($cookies->get('REMEMBERME'));
+                $cookies->expire('MOCKSESSID');
+            })
+            ->withProfiling() // required to trigger a security operation
+            ->visit('/user')
+            ->assertAuthenticated('kevin')
+            ->assertSee('user: kevin/pass/'.RememberMeToken::class)
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_enable_the_profiler(): void
+    {
+        $profile = $this->browser()
+            ->withProfiling()
+            ->visit('/page1')
+            ->profile()
+        ;
+
+        $this->assertTrue($profile->hasCollector('request'));
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function extension_saves_the_browser_state_when_a_test_fails(): void
+    {
+        // drives the hooks phpunit calls: saveBrowserStates() swallows its exceptions, so a
+        // regression there is invisible without asserting the artifacts land
+        $extension = new LegacyExtension();
+        $extension->executeBeforeFirstTest();
+        $extension->executeBeforeTest('X::y');
+
+        $this->browser()->visit('/page1');
+
+        $extension->executeAfterTestFailure('X::y', 'the failure message', 0.0);
+
+        $this->assertFileExists(__DIR__.'/../var/browser/source/failure_X__y__0.html');
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_profile_multiple_requests(): void
+    {
+        $browser = $this->browser();
+
+        $first = $browser->withProfiling()->visit('/page1')->profile();
+        $second = $browser->withProfiling()->visit('/page2')->profile();
+
+        $this->assertStringEndsWith('/page1', $first->getUrl() ?? '');
+        $this->assertStringEndsWith('/page2', $second->getUrl() ?? '');
+        $this->assertNotSame($first->getToken(), $second->getToken());
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_access_the_profiler(): void
+    {
+        $profile = $this->browser()
+            ->withProfiling()
+            ->visit('/page1')
+            ->profile()
+        ;
+
+        $this->assertTrue($profile->hasCollector('request'));
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_use_data_collector(): void
+    {
+        $this->browser()
+            ->withProfiling()
+            ->visit('/page1')
+            ->use(function(RequestDataCollector $collector) {
+                $this->assertSame('/page1', $collector->getPathInfo());
+            })
+        ;
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
     public function content_assertions(): void
     {
         $this->browser()
@@ -227,6 +865,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function assert_see_in_multiple_elements(): void
     {
         $this->browser()
@@ -239,6 +878,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_dump_response(): void
     {
         $output = self::catchVarDumperOutput(function() {
@@ -256,12 +896,14 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_save_source(): void
     {
-        $contents = self::catchFileContents(__DIR__.'/../var/browser/source/source.txt', function() {
+        $file = self::uniqueFilename('source.txt');
+        $contents = self::catchFileContents(__DIR__.'/../var/browser/source/'.$file, function() use ($file) {
             $this->browser()
                 ->visit('/page1')
-                ->saveSource('source.txt')
+                ->saveSource($file)
             ;
         });
 
@@ -272,17 +914,19 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_save_source_as_zip(): void
     {
-        $contents = self::catchFileContents(__DIR__.'/../var/browser/source/attachment.zip', function() {
+        $file = self::uniqueFilename('attachment.zip');
+        $contents = self::catchFileContents(__DIR__.'/../var/browser/source/'.$file, function() use ($file) {
             $this->browser()
                 ->visit('/zip')
-                ->saveSource('attachment.zip')
+                ->saveSource($file)
             ;
         });
 
         $this->assertEquals(
-            \file_get_contents(__DIR__.'/../var/browser/source/attachment.zip'),
+            \file_get_contents(__DIR__.'/../var/browser/source/'.$file),
             $contents,
         );
     }
@@ -290,6 +934,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function html_assertions(): void
     {
         $this->browser()
@@ -309,6 +954,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function html_head_assertions(): void
     {
         $this->browser()
@@ -324,6 +970,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function form_assertions(): void
     {
         $this->browser()
@@ -377,6 +1024,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function link_action(): void
     {
         $this->browser()
@@ -395,6 +1043,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function click_on_element(): void
     {
         $this->browser()
@@ -407,6 +1056,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function click_with_callback_filter(): void
     {
         $this->browser()
@@ -423,6 +1073,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function form_actions_by_field_label(): void
     {
         $this->browser()
@@ -453,6 +1104,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function form_actions_by_field_id(): void
     {
         $this->browser()
@@ -481,6 +1133,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function form_actions_by_field_name(): void
     {
         $this->browser()
@@ -507,6 +1160,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function select_field(): void
     {
         $this->browser()
@@ -527,6 +1181,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_submit_form_with_different_submit_buttons(): void
     {
         // Submit and Submit B, have the same field name but different values
@@ -561,6 +1216,7 @@ trait BrowserTests
      *
      * @test
      */
+    #[Test]
     public function can_submit_filled_form_with_different_submit_buttons(): void
     {
         // Submit and Submit B, have the same field name but different values
@@ -604,6 +1260,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function cannot_attach_file_that_does_not_exist(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -617,6 +1274,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_attach_multiple_files(): void
     {
         $this->browser()
@@ -630,6 +1288,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function cannot_attach_multiple_files_to_a_non_multiple_input(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -643,6 +1302,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_dump_html_element(): void
     {
         $output = self::catchVarDumperOutput(function() {
@@ -659,6 +1319,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function if_dump_selector_matches_multiple_elements_all_are_dumped(): void
     {
         $output = self::catchVarDumperOutput(function() {
@@ -676,6 +1337,7 @@ trait BrowserTests
     /**
      * @test
      */
+    #[Test]
     public function can_access_the_html_crawler(): void
     {
         $crawler = $this->browser()
@@ -690,42 +1352,32 @@ trait BrowserTests
     /**
      * @test
      */
-    public function fails_if_trying_to_manipulate_exception_page(): void
-    {
-        if (Kernel::VERSION_ID >= 70400) {
-            $this->markTestIncomplete('Symfony 7.4+ changed exception page structure.');
-        }
-
-        Assert::that(function() {
-            $this->browser()
-                ->visit('/exception')
-                ->click('foo')
-            ;
-        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
-
-        Assert::that(function() {
-            $this->browser()
-                ->visit('/exception')
-                ->fillField('foo', 'bar')
-            ;
-        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
-
-        Assert::that(function() {
-            $this->browser()
-                ->visit('/exception')
-                ->assertSee('foo')
-            ;
-        })->throws(AssertionFailedError::class, 'The last request threw an exception: Zenstruck\Browser\Tests\Fixture\CustomException - exception thrown');
-    }
-
-    /**
-     * @test
-     */
+    #[Test]
     public function can_get_content(): void
     {
         $content = $this->browser()->visit('/text')->content();
 
         $this->assertStringContainsString('text content', $content);
+    }
+
+    /**
+     * @test
+     */
+    #[Test]
+    public function can_get_content_of_an_exception_page(): void
+    {
+        $content = $this->browser()->visit('/exception')->content();
+
+        $this->assertStringContainsString('exception thrown', $content);
+    }
+
+    /**
+     * Tests run concurrently (paratest --functional) and save into the same directories: a
+     * unique filename per save keeps them from reading each other's files.
+     */
+    protected static function uniqueFilename(string $filename): string
+    {
+        return \sprintf('%s-%s', \bin2hex(\random_bytes(4)), $filename);
     }
 
     protected static function catchFileContents(string $expectedFile, callable $callback): string
